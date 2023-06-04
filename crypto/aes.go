@@ -25,6 +25,11 @@ var (
 )
 
 func EncryptAES256CBCPBKDF2(plaintext []byte, pass string, salt string) ([]byte, error) {
+	var (
+		block cipher.Block
+		err   error
+	)
+
 	if len(plaintext) == 0 { // covers the case of plaintext == nil
 		return nil, ErrInvalidData
 	}
@@ -35,7 +40,7 @@ func EncryptAES256CBCPBKDF2(plaintext []byte, pass string, salt string) ([]byte,
 		return nil, ErrInvalidSalt
 	}
 
-	blockCipher, err := aes.NewCipher(
+	if block, err = aes.NewCipher(
 		pbkdf2.Key(
 			[]byte(pass),
 			[]byte(salt),
@@ -43,8 +48,7 @@ func EncryptAES256CBCPBKDF2(plaintext []byte, pass string, salt string) ([]byte,
 			AES256KeyLen,
 			sha256.New,
 		),
-	)
-	if err != nil {
+	); err != nil {
 		return nil, ErrEncryptionFailed
 	}
 
@@ -58,15 +62,19 @@ func EncryptAES256CBCPBKDF2(plaintext []byte, pass string, salt string) ([]byte,
 		return nil, ErrEncryptionFailed
 	}
 
-	blockCipherMode := cipher.NewCBCEncrypter(blockCipher, iv)
 	ciphertext := make([]byte, len(iv)+len(input)) // multiple of aes.BlockSize
 	copy(ciphertext, iv)
-	blockCipherMode.CryptBlocks(ciphertext[aes.BlockSize:], input)
+	cipher.NewCBCEncrypter(block, iv).CryptBlocks(ciphertext[aes.BlockSize:], input)
 
 	return ciphertext, nil
 }
 
 func DecryptAES256CBCPBKDF2(ciphertext []byte, pass string, salt string) ([]byte, error) {
+	var (
+		block cipher.Block
+		err   error
+	)
+
 	if len(ciphertext) == 0 { // covers the case of ciphertext == nil
 		return nil, ErrInvalidData
 	}
@@ -83,7 +91,7 @@ func DecryptAES256CBCPBKDF2(ciphertext []byte, pass string, salt string) ([]byte
 	iv := ciphertext[:aes.BlockSize]
 	ciphertext = ciphertext[aes.BlockSize:]
 
-	blockCipher, err := aes.NewCipher(
+	if block, err = aes.NewCipher(
 		pbkdf2.Key(
 			[]byte(pass),
 			[]byte(salt),
@@ -91,14 +99,12 @@ func DecryptAES256CBCPBKDF2(ciphertext []byte, pass string, salt string) ([]byte
 			AES256KeyLen,
 			sha256.New,
 		),
-	)
-	if err != nil {
+	); err != nil {
 		return nil, ErrDecryptionFailed
 	}
 
-	blockCipherMode := cipher.NewCBCDecrypter(blockCipher, iv)
 	plaintext := make([]byte, len(ciphertext)) // multiple of aes.BlockSize
-	blockCipherMode.CryptBlocks(plaintext, ciphertext)
+	cipher.NewCBCDecrypter(block, iv).CryptBlocks(plaintext, ciphertext)
 
 	if plaintext, err = UnpadPKCS7(plaintext, aes.BlockSize); err != nil {
 		return nil, err
